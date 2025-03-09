@@ -1,0 +1,97 @@
+version: '3'
+
+services:
+  backend:
+    image: "langflow-backend:latest"
+    depends_on:
+      - db
+      - broker
+      - result_backend
+    env_file:
+      - .env
+    environment:
+      - LANGFLOW_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
+    ports:
+      - "0.0.0.0:7860:7860"
+    command: python -m uvicorn --host 0.0.0.0 --port 7860 --factory langflow.main:create_app
+
+  celeryworker:
+    image: "langflow-backend:latest"
+    command: python -m celery -A langflow.worker worker --loglevel=info
+    depends_on:
+      - backend
+      - broker
+      - result_backend
+    env_file:
+      - .env
+    environment:
+      - LANGFLOW_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
+
+  flower:
+    image: "langflow-backend:latest"
+    command: python -m celery -A langflow.worker flower --loglevel=info
+    depends_on:
+      - backend
+      - broker
+      - result_backend
+    env_file:
+      - .env
+    environment:
+      - LANGFLOW_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
+    ports:
+      - "0.0.0.0:5555:5555"
+
+  frontend:
+    image: "langflow-frontend:latest"
+    env_file:
+      - .env
+    environment:
+      - BACKEND_URL=http://backend:7860
+    ports:
+      - "0.0.0.0:8090:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15.4
+    volumes:
+      - app-db-data:/var/lib/postgresql/data/pgdata
+    environment:
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    env_file:
+      - .env
+
+  pgadmin:
+    image: dpage/pgadmin4
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - PGADMIN_LISTEN_PORT=5050
+    ports:
+      - "0.0.0.0:5050:5050"
+
+  broker:
+    image: rabbitmq:3-management
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  result_backend:
+    image: redis:6.2.5
+    env_file:
+      - .env
+    ports:
+      - "6379:6379"
+
+volumes:
+  app-db-data: 
